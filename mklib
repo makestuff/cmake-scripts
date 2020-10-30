@@ -77,7 +77,7 @@ EOF
         {
             "label": "cmake",
             "type": "shell",
-            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/tmp/install -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..",
+            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/tmp/install -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..; cd ..; ln -s build/compile_commands.json compile_commands.json",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
@@ -107,13 +107,14 @@ if [ ! -e build ]; then
   cd build
   cmake \\
     -DBUILD_TESTING=1 \\
-    -DCMAKE_INSTALL_PREFIX=/tmp/install \\
-    -DCMAKE_INSTALL_RPATH=\\\$ORIGIN \\
     -DCMAKE_BUILD_TYPE=Debug \\
+    -DCMAKE_INSTALL_PREFIX=/tmp/install \\
     -DCMAKE_VERBOSE_MAKEFILE=0 \\
+    -DCMAKE_INSTALL_RPATH=\\\$ORIGIN \\
     -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \\
     ..
   cd ..
+  ln -s build/compile_commands.json compile_commands.json
 fi
 cmake --build build --target install
 EOF
@@ -257,7 +258,7 @@ EOF
         {
             "label": "cmake",
             "type": "shell",
-            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/tmp/install -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..",
+            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/tmp/install -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..; cd ..; ln -s build/compile_commands.json compile_commands.json",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
@@ -287,13 +288,14 @@ if [ ! -e build ]; then
   cd build
   cmake \\
     -DBUILD_TESTING=1 \\
-    -DCMAKE_INSTALL_PREFIX=/tmp/install \\
-    -DCMAKE_INSTALL_RPATH=\\\$ORIGIN \\
     -DCMAKE_BUILD_TYPE=Debug \\
+    -DCMAKE_INSTALL_PREFIX=/tmp/install \\
     -DCMAKE_VERBOSE_MAKEFILE=0 \\
+    -DCMAKE_INSTALL_RPATH=\\\$ORIGIN \\
     -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \\
     ..
   cd ..
+  ln -s build/compile_commands.json compile_commands.json
 fi
 cmake --build build --target install
 EOF
