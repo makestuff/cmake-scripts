@@ -1,0 +1,339 @@
+#!/bin/sh
+
+ENABLE_VSCODE=0
+while getopts -: OPT; do
+  case "${OPT}" in
+    -)
+      case "${OPTARG}" in
+        vscode)
+          ENABLE_VSCODE=1
+          ;;
+      esac
+      ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+if [ $# -ne 2 ]; then
+  echo "Synopsis: $0 [--vscode] <lib-name> <app-name>"
+  exit 1
+fi
+LIB=$1
+APP=$2
+
+if [ -e ${LIB} ]; then
+  echo "${LIB} already exists!"
+  exit 1
+fi
+if [ -e ${APP} ]; then
+  echo "${APP} already exists!"
+  exit 1
+fi
+if [ ! -e googletest ]; then
+  echo "You don't have GoogleTest. Try something like this:"
+  echo "  git clone https://github.com/google/googletest.git"
+  exit 1
+fi
+
+# Get googletest version
+GOOGLETEST=$(grep -E '^set\(GOOGLETEST_VERSION ' googletest/CMakeLists.txt)
+
+# Create the lib
+mkdir -p ${LIB}
+cd ${LIB}
+
+# Maybe create the VSCode stuff
+if [ ${ENABLE_VSCODE} -eq 1 ]; then
+    mkdir -p .vscode
+    cat > .vscode/launch.json <<EOF
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "${LIB}-tests",
+            "type": "gdb",
+            "request": "launch",
+            "target": "\${workspaceFolder}/build/tests/tests",
+            "arguments": "",
+            "cwd": "\${workspaceFolder}",
+            "valuesFormatting": "parseText",
+            "gdbpath": "gdb",
+            "debugger_args": [],
+            "env": {"FOO": "foo"}
+        }
+    ]
+}
+EOF
+
+    cat > .vscode/tasks.json <<EOF
+{
+    // See: https://go.microsoft.com/fwlink/?linkid=733558
+    // for the documentation about the tasks.json format
+    "version": "0.2.0",
+    "tasks": [
+        {
+            "label": "cmake",
+            "type": "shell",
+            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/tmp/install -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmake --build build --target install",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
+EOF
+fi
+
+# Create build script
+cat > build.sh <<EOF
+#!/bin/sh
+if [ ! -e build ]; then
+  mkdir build
+  cd build
+  cmake \\
+    -DBUILD_TESTING=1 \\
+    -DCMAKE_INSTALL_PREFIX=/tmp/install \\
+    -DCMAKE_INSTALL_RPATH=\\\$ORIGIN \\
+    -DCMAKE_BUILD_TYPE=Debug \\
+    -DCMAKE_VERBOSE_MAKEFILE=0 \\
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \\
+    ..
+  cd ..
+fi
+cmake --build build --target install
+EOF
+chmod +x build.sh
+
+# Create CMakeLists.txt
+cat > CMakeLists.txt <<EOF
+cmake_minimum_required(VERSION 3.13)
+project(${LIB})
+
+# Create a shared library
+file(GLOB CPP_SOURCES src/*.cpp)
+add_library(\${PROJECT_NAME} SHARED \${CPP_SOURCES})
+
+# Ensure clients can find the includes
+target_include_directories(\${PROJECT_NAME}
+  PUBLIC
+    \$<INSTALL_INTERFACE:include>
+    \$<BUILD_INTERFACE:\${CMAKE_CURRENT_SOURCE_DIR}/include>
+  PRIVATE
+    \${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Turn warning level up, and use C++17
+if(MSVC)
+  target_compile_options(\${PROJECT_NAME} PRIVATE /W4 /WX)
+else()
+  target_compile_options(\${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic -Werror)
+endif()
+target_compile_features(\${PROJECT_NAME} PRIVATE cxx_std_17)
+
+# What to install
+file(GLOB CPP_HEADERS include/\${PROJECT_NAME}/*.h)
+set_target_properties(\${PROJECT_NAME} PROPERTIES PUBLIC_HEADER \${CPP_HEADERS})
+install(TARGETS \${PROJECT_NAME}
+  LIBRARY DESTINATION bin
+  PUBLIC_HEADER DESTINATION include/\${PROJECT_NAME}
+)
+
+# Maybe build tests
+if(BUILD_TESTING)
+  ${GOOGLETEST}
+  add_subdirectory("../googletest/googlemock" "\${CMAKE_CURRENT_BINARY_DIR}/googlemock")
+  add_subdirectory(tests)
+endif()
+EOF
+
+mkdir -p include/${LIB}
+cat > include/${LIB}/mul.h <<EOF
+#ifndef MUL_H
+#define MUL_H
+
+namespace ${LIB}
+{
+  int mul(int x, int y);
+}
+
+#endif
+EOF
+
+mkdir -p src
+cat > src/mul.cpp <<EOF
+#include <${LIB}/mul.h>
+
+namespace ${LIB}
+{
+  int mul(int x, int y)
+  {
+    return x * y;
+  }
+}
+EOF
+
+mkdir -p tests
+cat > tests/CMakeLists.txt <<EOF
+# Create a test-driver executable
+file(GLOB CPP_SOURCES *.cpp)
+add_executable(tests \${CPP_SOURCES})
+
+# Link with GoogleTest and the ${LIB} library itself
+target_link_libraries(tests PRIVATE ${LIB} gtest gmock)
+EOF
+
+cat > tests/main.cpp <<EOF
+#include <gmock/gmock.h>
+
+int main(int argc, char* argv[])
+{
+  testing::InitGoogleMock(&argc, argv);
+  return RUN_ALL_TESTS();
+}
+EOF
+
+cat > tests/mulTests.cpp <<EOF
+#include <gtest/gtest.h>
+#include <${LIB}/mul.h>
+
+TEST(Multiply, verifySimpleMultiplication)
+{
+  ASSERT_EQ(200, ${LIB}::mul(10, 20));
+}
+EOF
+
+# Create the app
+cd ..
+mkdir -p ${APP}
+cd ${APP}
+
+# Maybe create the VSCode stuff
+if [ ${ENABLE_VSCODE} -eq 1 ]; then
+    mkdir -p .vscode
+    cat > .vscode/launch.json <<EOF
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "${APP}",
+            "type": "gdb",
+            "request": "launch",
+            "target": "\${workspaceFolder}/build/${APP}",
+            "arguments": "",
+            "cwd": "\${workspaceFolder}",
+            "valuesFormatting": "parseText",
+            "gdbpath": "gdb",
+            "debugger_args": [],
+            "env": {"FOO": "foo"}
+        }
+    ]
+}
+EOF
+
+    cat > .vscode/tasks.json <<EOF
+{
+    // See: https://go.microsoft.com/fwlink/?linkid=733558
+    // for the documentation about the tasks.json format
+    "version": "0.2.0",
+    "tasks": [
+        {
+            "label": "cmake",
+            "type": "shell",
+            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/tmp/install -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "cmake --build build --target install",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
+EOF
+fi
+
+# Create build script
+cat > build.sh <<EOF
+#!/bin/sh
+if [ ! -e build ]; then
+  mkdir build
+  cd build
+  cmake \\
+    -DBUILD_TESTING=1 \\
+    -DCMAKE_INSTALL_PREFIX=/tmp/install \\
+    -DCMAKE_INSTALL_RPATH=\\\$ORIGIN \\
+    -DCMAKE_BUILD_TYPE=Debug \\
+    -DCMAKE_VERBOSE_MAKEFILE=0 \\
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \\
+    ..
+  cd ..
+fi
+cmake --build build --target install
+EOF
+chmod +x build.sh
+
+# Create CMakeLists.txt
+cat > CMakeLists.txt <<EOF
+cmake_minimum_required(VERSION 3.13)
+project(${APP})
+
+# Create an executable
+file(GLOB CPP_SOURCES *.cpp)
+add_executable(\${PROJECT_NAME} \${CPP_SOURCES})
+
+# Link with "${LIB}" library
+target_link_libraries(\${PROJECT_NAME} PRIVATE ${LIB})
+add_subdirectory("../${LIB}" "\${CMAKE_CURRENT_BINARY_DIR}/${LIB}")
+
+# Turn warning level up, and use C++17
+if(MSVC)
+  target_compile_options(\${PROJECT_NAME} PRIVATE /W4 /WX)
+else()
+  target_compile_options(\${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic -Werror)
+endif()
+target_compile_features(\${PROJECT_NAME} PRIVATE cxx_std_17)
+
+# What to install
+install(TARGETS \${PROJECT_NAME}
+  DESTINATION bin
+)
+EOF
+
+# Create main.cpp
+cat > main.cpp <<EOF
+#include <iostream>
+#include <${LIB}/mul.h>
+
+int main(int, const char*[])
+{
+  std::cout << "10 * 20 = " << ${LIB}::mul(10, 20) << '\\n';
+  return 0;
+}
+EOF
