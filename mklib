@@ -1,7 +1,7 @@
 #!/bin/sh
 
 ENABLE_VSCODE=0
-while getopts -: OPT; do
+while getopts "\-:" OPT; do
   case "${OPT}" in
     -)
       case "${OPTARG}" in
