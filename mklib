@@ -68,6 +68,13 @@ if [ ${ENABLE_VSCODE} -eq 1 ]; then
 }
 EOF
 
+    cat > .vscode/settings.json <<EOF
+{
+    "gtest-adapter.debugConfig": "${LIB}-tests",
+    "gtest-adapter.supportLocation": true
+}
+EOF
+
     cat > .vscode/tasks.json <<EOF
 {
     // See: https://go.microsoft.com/fwlink/?linkid=733558
