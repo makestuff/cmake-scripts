@@ -38,6 +38,9 @@ fi
 # Get googletest version
 GOOGLETEST=$(grep -E '^set\(GOOGLETEST_VERSION ' googletest/CMakeLists.txt)
 
+# Get GCC location
+GCC_LOCATION=$(dirname $(dirname $(which g++)))
+
 # Create the lib
 mkdir -p ${LIB}
 cd ${LIB}
@@ -60,9 +63,9 @@ if [ ${ENABLE_VSCODE} -eq 1 ]; then
             "arguments": "",
             "cwd": "\${workspaceFolder}",
             "valuesFormatting": "parseText",
-            "gdbpath": "gdb",
-            "debugger_args": [],
-            "env": {"FOO": "foo"}
+            "gdbpath": "${GCC_LOCATION}/bin/gdb",
+            "debugger_args": ["-data-directory", "${GCC_LOCATION}/share/gdb"],
+            "env": {"PYTHONPATH": "${GCC_LOCATION}/share/gdb/python"}
         }
     ]
 }
@@ -255,9 +258,9 @@ if [ ${ENABLE_VSCODE} -eq 1 ]; then
             "arguments": "",
             "cwd": "\${workspaceFolder}",
             "valuesFormatting": "parseText",
-            "gdbpath": "gdb",
-            "debugger_args": [],
-            "env": {"FOO": "foo"}
+            "gdbpath": "${GCC_LOCATION}/bin/gdb",
+            "debugger_args": ["-data-directory", "${GCC_LOCATION}/share/gdb"],
+            "env": {"PYTHONPATH": "${GCC_LOCATION}/share/gdb/python"}
         }
     ]
 }
