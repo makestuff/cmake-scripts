@@ -106,6 +106,13 @@ EOF
 EOF
 fi
 
+# Create .gitignore
+cat > .gitignore <<EOF
+build
+compile_commands.json
+.clangd
+EOF
+
 # Create build script
 cat > build.sh <<EOF
 #!/bin/sh
@@ -286,6 +293,13 @@ EOF
 }
 EOF
 fi
+
+# Create .gitignore
+cat > .gitignore <<EOF
+build
+compile_commands.json
+.clangd
+EOF
 
 # Create build script
 cat > build.sh <<EOF
