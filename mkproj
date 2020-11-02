@@ -246,7 +246,7 @@ endif()
 
 # Build components
 add_subdirectory("lib${LIB}")
-add_subdirectory("app")
+add_subdirectory("${APP}")
 EOF
 
 # Create library
