@@ -1,0 +1,393 @@
+#!/bin/sh
+
+ENABLE_VSCODE=0
+while getopts "\-:" OPT; do
+  case "${OPT}" in
+    -)
+      case "${OPTARG}" in
+        vscode)
+          ENABLE_VSCODE=1
+          ;;
+      esac
+      ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+if [ $# -ne 3 ]; then
+  echo "Synopsis: $0 [--vscode] <project> <lib-name> <app-name>"
+  exit 1
+fi
+PROJ=$1
+LIB=$2
+ULIB=$(echo ${LIB} | tr '[a-z]' '[A-Z]')
+APP=$3
+TOOLS=$(dirname $0)
+
+if [ -e ${PROJ} ]; then
+  echo "${PROJ} already exists!"
+  exit 1
+fi
+
+# Get GCC location
+GCC_LOCATION=$(dirname $(dirname $(which g++)))
+
+# Create project directory
+mkdir ${PROJ}
+cd ${PROJ}
+git init .
+
+# Get GoogleTest as a submodule
+GTEST_REPO=https://github.com/google/googletest.git
+if [ -e ${TOOLS}/gtest-repo.txt ]; then
+    GTEST_REPO=$(cat ${TOOLS}/gtest-repo.txt)
+fi
+git submodule add ${GTEST_REPO} googletest
+GOOGLETEST=$(grep -E '^set\(GOOGLETEST_VERSION ' googletest/CMakeLists.txt)
+
+# Maybe create the VSCode stuff
+if [ ${ENABLE_VSCODE} -eq 1 ]; then
+    mkdir -p .vscode
+    cat > .vscode/launch.json <<EOF
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "${LIB}-tests",
+            "type": "gdb",
+            "request": "launch",
+            "target": "\${workspaceFolder}/build/bin/${LIB}-tests",
+            "arguments": "",
+            "cwd": "\${workspaceFolder}",
+            "valuesFormatting": "parseText",
+            "gdbpath": "${GCC_LOCATION}/bin/gdb",
+            "debugger_args": ["-data-directory", "${GCC_LOCATION}/share/gdb"],
+            "env": {"PYTHONPATH": "${GCC_LOCATION}/share/gdb/python"}
+        }
+    ]
+}
+EOF
+
+    cat > .vscode/settings.json <<EOF
+{
+    "gtest-adapter.debugConfig": "${LIB}-tests",
+    "gtest-adapter.supportLocation": true
+}
+EOF
+
+    cat > .vscode/tasks.json <<EOF
+{
+    // See: https://go.microsoft.com/fwlink/?linkid=733558
+    // for the documentation about the tasks.json format
+    "version": "0.2.0",
+    "tasks": [
+        {
+            "label": "cmake",
+            "type": "shell",
+            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_PREFIX=../install -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..; cd ..; rm -f compile_commands.json; ln -s build/compile_commands.json compile_commands.json",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build-debug",
+            "type": "shell",
+            "command": "cmake --build build --config Debug --target install",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build-release",
+            "type": "shell",
+            "command": "cmake --build build --config Release --target install",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
+EOF
+fi
+
+# Create .gitignore
+cat > .gitignore <<EOF
+build
+install
+compile_commands.json
+.clangd
+EOF
+
+# Create .github workflow for build & test
+mkdir -p .github/workflows
+cat > .github/workflows/build-test.yml <<EOF
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+
+      - name: Build
+        run: ./build.sh Release
+
+      - name: Test
+        run: cd build && ctest -C Release --verbose
+
+  build-windows:
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+
+      - name: Build
+        run: .\\build.cmd Release
+
+      - name: Test
+        run: cd build && ctest -C Release --verbose
+EOF
+
+# Create build scripts
+cat > build.cmd <<EOF
+@echo off
+setlocal
+set CONFIG=Debug
+if not "%1" == "" (
+  set CONFIG=%1
+)
+
+if not exist build (
+  md build
+  cd build
+  cmake ^
+    -DBUILD_TESTING=1 ^
+    -DCMAKE_VERBOSE_MAKEFILE=0 ^
+    -DCMAKE_INSTALL_PREFIX=../install ^
+    -Dgtest_force_shared_crt=ON ^
+    -A x64 ^
+    ..
+  cd ..
+)
+cmake --build build --config %CONFIG% --target install
+endlocal
+EOF
+cat > build.sh <<EOF
+#!/bin/sh
+
+CONFIG=Debug
+if [ \$# -eq 1 ]; then
+  CONFIG=\$1
+fi
+
+if [ ! -e build ]; then
+  mkdir build
+  cd build
+  cmake \\
+    -DBUILD_TESTING=1 \\
+    -DCMAKE_VERBOSE_MAKEFILE=0 \\
+    -DCMAKE_INSTALL_PREFIX=../install \\
+    -DCMAKE_INSTALL_RPATH=\\\$ORIGIN \\
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \\
+    ..
+  cd ..
+  rm -f compile_commands.json
+  ln -s build/compile_commands.json compile_commands.json
+fi
+cmake --build build --config \${CONFIG} --target install
+EOF
+chmod +x build.sh
+
+# Create top-level CMakeLists.txt
+cat > CMakeLists.txt <<EOF
+cmake_minimum_required(VERSION 3.13)
+project(cmake-test)
+
+# Use a single output directory for everything
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
+
+# Turn warning level up, and use C++17
+if(MSVC)
+  add_compile_options(/W4 /WX)
+else()
+  add_compile_options(-Wall -Wextra -pedantic -Werror)
+endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS 0)
+
+# Maybe build GoogleTest
+if(BUILD_TESTING)
+  include(CTest)
+  set(GOOGLETEST_VERSION 1.10.0)
+  add_subdirectory("googletest/googlemock")
+endif()
+
+# Build components
+add_subdirectory("lib${LIB}")
+add_subdirectory("app")
+EOF
+
+# Create library
+mkdir lib${LIB}
+
+cat > lib${LIB}/CMakeLists.txt <<EOF
+project(${LIB})
+
+# Create a shared library
+file(GLOB CPP_SOURCES src/*.cpp)
+add_library(\${PROJECT_NAME} SHARED \${CPP_SOURCES})
+
+# Ensure clients can find the includes
+target_include_directories(\${PROJECT_NAME}
+  PUBLIC
+    \$<INSTALL_INTERFACE:include>
+    \$<BUILD_INTERFACE:\${CMAKE_CURRENT_SOURCE_DIR}/include>
+  PRIVATE
+    \${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# What to install
+file(GLOB CPP_HEADERS include/\${PROJECT_NAME}/*.h)
+set_target_properties(\${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "\${CPP_HEADERS}")
+install(TARGETS \${PROJECT_NAME}
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION bin
+  ARCHIVE DESTINATION bin
+  PUBLIC_HEADER DESTINATION include/\${PROJECT_NAME}
+)
+
+# Maybe build tests
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
+EOF
+
+mkdir -p lib${LIB}/include/${LIB}
+cat > lib${LIB}/include/${LIB}/dllexport.h <<EOF
+#ifndef ${ULIB}_EXPORT_H
+#define ${ULIB}_EXPORT_H
+
+#ifdef _MSC_VER
+  #ifdef ${LIB}_EXPORTS
+    #define ${ULIB}_EXPORT __declspec(dllexport)
+  #else
+    #define ${ULIB}_EXPORT __declspec(dllimport)
+  #endif
+#else
+  #define ${ULIB}_EXPORT
+#endif
+
+#endif
+EOF
+
+cat > lib${LIB}/include/${LIB}/mul.h <<EOF
+#ifndef ${ULIB}_MUL_H
+#define ${ULIB}_MUL_H
+
+#include "dllexport.h"
+
+namespace ${LIB}
+{
+  ${ULIB}_EXPORT int mul(int x, int y);
+}
+
+#endif
+EOF
+
+mkdir lib${LIB}/src
+cat > lib${LIB}/src/mul.cpp <<EOF
+#include <${LIB}/mul.h>
+
+namespace ${LIB}
+{
+  int mul(int x, int y)
+  {
+    return x * y;
+  }
+}
+EOF
+
+mkdir lib${LIB}/tests
+cat > lib${LIB}/tests/CMakeLists.txt <<EOF
+# Create a test-driver executable
+file(GLOB CPP_SOURCES *.cpp)
+add_executable(\${PROJECT_NAME}-tests \${CPP_SOURCES})
+
+# Link with GoogleTest and the ${LIB} library itself
+target_link_libraries(\${PROJECT_NAME}-tests PRIVATE ${LIB} gtest gmock)
+
+# Add this test-driver
+add_test(
+  NAME \${PROJECT_NAME}-tests
+  COMMAND \${PROJECT_NAME}-tests --gtest_output=xml:\${CMAKE_BINARY_DIR}/test-results/\${PROJECT_NAME}.xml
+)
+EOF
+
+cat > lib${LIB}/tests/main.cpp <<EOF
+#include <gmock/gmock.h>
+
+int main(int argc, char* argv[])
+{
+  testing::InitGoogleMock(&argc, argv);
+  return RUN_ALL_TESTS();
+}
+EOF
+
+cat > lib${LIB}/tests/testMul.cpp <<EOF
+#include <gtest/gtest.h>
+#include <${LIB}/mul.h>
+
+TEST(Multiply, verifySimpleMultiplication)
+{
+  ASSERT_EQ(200, ${LIB}::mul(10, 20));
+}
+EOF
+
+# Create app
+mkdir ${APP}
+cat > ${APP}/CMakeLists.txt <<EOF
+project(${APP})
+
+# Create an executable
+file(GLOB CPP_SOURCES *.cpp)
+add_executable(\${PROJECT_NAME} \${CPP_SOURCES})
+
+# Link with "${LIB}" library
+target_link_libraries(\${PROJECT_NAME} PRIVATE ${LIB})
+
+# What to install
+install(TARGETS \${PROJECT_NAME}
+  DESTINATION bin
+)
+EOF
+
+cat > ${APP}/main.cpp <<EOF
+#include <iostream>
+#include <${LIB}/mul.h>
+
+int main(int, const char*[])
+{
+  std::cout << "10 * 20 = " << ${LIB}::mul(10, 20) << '\\n';
+  return 0;
+}
+EOF
