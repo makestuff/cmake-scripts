@@ -56,6 +56,18 @@ if [ ${ENABLE_VSCODE} -eq 1 ]; then
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "${APP}",
+            "type": "gdb",
+            "request": "launch",
+            "target": "\${workspaceFolder}/build/bin/${APP}",
+            "arguments": "",
+            "cwd": "\${workspaceFolder}",
+            "valuesFormatting": "parseText",
+            "gdbpath": "${GCC_LOCATION}/bin/gdb",
+            "debugger_args": ["-data-directory", "${GCC_LOCATION}/share/gdb"],
+            "env": {"PYTHONPATH": "${GCC_LOCATION}/share/gdb/python"}
+        },
+        {
             "name": "${LIB}-tests",
             "type": "gdb",
             "request": "launch",
@@ -87,7 +99,7 @@ EOF
         {
             "label": "cmake",
             "type": "shell",
-            "command": "rm -rf build; mkdir build; cd build; cmake -DBUILD_TESTING=1 -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_PREFIX=../install -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..; cd ..; rm -f compile_commands.json; ln -s build/compile_commands.json compile_commands.json",
+            "command": "rm -rf build; mkdir build; cd build; cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=1 -DCMAKE_VERBOSE_MAKEFILE=0 -DCMAKE_INSTALL_PREFIX=../install -DCMAKE_INSTALL_RPATH=\\\$ORIGIN -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..; cd ..; rm -f compile_commands.json; ln -s build/compile_commands.json compile_commands.json",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
@@ -95,19 +107,9 @@ EOF
             }
         },
         {
-            "label": "build-debug",
+            "label": "build",
             "type": "shell",
-            "command": "cmake --build build --config Debug --target install",
-            "problemMatcher": [],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        },
-        {
-            "label": "build-release",
-            "type": "shell",
-            "command": "cmake --build build --config Release --target install",
+            "command": "cmake --build build --target install",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
